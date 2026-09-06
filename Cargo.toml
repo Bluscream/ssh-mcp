@@ -16,7 +16,7 @@ clap = { version = "4.6.6", features = ["derive", "env"] }
 ignore = "0.4.33"
 mcp-toolkit = { git = "https://github.com/Bluscream/mcp-toolkit", branch = "main", version = "0.1.0" }
 regex = "1.13.1"
-russh = "0.63.1"
+russh = { version = "0.63.1", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "2.4.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
