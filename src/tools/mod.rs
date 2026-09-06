@@ -14,6 +14,8 @@ use regex::Regex;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
+use mcp_toolkit::spill::SpillDir;
+
 use crate::args;
 use crate::config::SshServerConfig;
 use crate::policy::Policy;
@@ -24,6 +26,8 @@ use status::ServerStatus;
 
 pub struct SshTools {
     policy: Policy,
+    /// Where oversized command output is preserved.
+    spill: SpillDir,
     servers: HashMap<String, SshServerConfig>,
     /// Mirrors `tools.allow_host_key_override`, so `descriptors()` (which has
     /// no `ToolContext`) does not advertise an override that would be refused.
@@ -53,6 +57,7 @@ impl SshTools {
 
         Self {
             policy,
+            spill: SpillDir::for_server("ssh"),
             servers,
             allow_key_override,
             default_server: first,
@@ -156,7 +161,7 @@ impl SshTools {
         let session_arc = self.pool.get_or_connect(config, save_fp).await?;
         let mut session = session_arc.lock().await;
 
-        let (stdout, stderr, code) = session.exec(cmd).await?;
+        let (stdout, stderr, code) = session.exec(cmd, &self.spill).await?;
 
         // Background non-blocking status collection refresh
         let status_cache = Arc::clone(&self.status_cache);
@@ -168,9 +173,14 @@ impl SshTools {
         });
 
         let mut result = ToolOutput::structured(json!({
-            "stdout": stdout,
-            "stderr": stderr,
+            "stdout": stdout.text_with_notice(),
+            "stderr": stderr.text_with_notice(),
             "exit_code": code,
+            "stdout_bytes": stdout.total_bytes,
+            "stderr_bytes": stderr.total_bytes,
+            // Where the complete stream was saved, when it did not fit inline.
+            "stdout_file": stdout.spilled.as_ref().map(|s| s.path.display().to_string()),
+            "stderr_file": stderr.spilled.as_ref().map(|s| s.path.display().to_string()),
         }));
         if code != 0 {
             result.is_error = true;

@@ -1,5 +1,6 @@
 //! Remote system status information matching the verbose telemetry from `ssh-mcp-server-bluscream`.
 
+use mcp_toolkit::spill::SpillDir;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -108,10 +109,13 @@ async fn run_probe(
     server_name: &str,
     cmd: &'static str,
 ) -> String {
+    // Telemetry probes return a line or two; a small cap keeps them from ever
+    // spilling to disk, and their output is not worth preserving anyway.
+    let spill = SpillDir::for_server("ssh-probe");
     let mut guard = session.lock().await;
-    match guard.exec(cmd).await {
-        Ok((stdout, _stderr, 0)) => stdout.trim().to_string(),
-        Ok((stdout, _, _)) => stdout.trim().to_string(),
+    match guard.exec(cmd, &spill).await {
+        Ok((stdout, _stderr, 0)) => stdout.head.trim().to_string(),
+        Ok((stdout, _, _)) => stdout.head.trim().to_string(),
         Err(e) => {
             warn!("SSH probe failed on [{server_name}]: {e}");
             String::new()

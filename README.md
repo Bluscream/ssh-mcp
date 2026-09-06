@@ -45,7 +45,11 @@ matches — a blacklist that fails open is worse than none.
 
 - Downloads are refused unless `--allow-download`; local paths are confined to
   `--root`.
-- Command output is capped at 256 KiB per stream, with truncation reported.
+- Command output is capped at 256 KiB per stream **inline**, but nothing is
+  lost: anything past the cap is streamed to a file and the result names it, so
+  the rest can be read or searched without re-running a command that may have
+  had side effects. Old captures are pruned automatically and written `0600`,
+  since command output can contain credentials.
 - Profiles with neither a key nor a password are rejected at load.
 - HTTP requires a bearer token unless `--allow-unauthenticated`.
 

@@ -10,6 +10,8 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 
+use mcp_toolkit::spill::{Captured, SpillDir};
+
 use super::known_hosts::KnownHostsStore;
 
 /// Cap on captured stdout/stderr per remote command, mirroring `eval_code`.
@@ -211,7 +213,11 @@ impl SshSessionHandle {
         !self.handle.is_closed()
     }
 
-    pub async fn exec(&mut self, cmd: &str) -> ToolResult<(String, String, u32)> {
+    pub async fn exec(
+        &mut self,
+        cmd: &str,
+        spill: &SpillDir,
+    ) -> ToolResult<(Captured, Captured, u32)> {
         let mut channel =
             self.handle.channel_open_session().await.map_err(|e| {
                 ToolFailure::Failed(format!("failed to open SSH session channel: {e}"))
@@ -222,44 +228,25 @@ impl SshSessionHandle {
             .await
             .map_err(|e| ToolFailure::Failed(format!("failed to exec command {cmd:?}: {e}")))?;
 
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let mut truncated = false;
+        // Remote output is untrusted and unbounded. The head is kept in memory
+        // and anything past the cap streams to a file, because discarding it
+        // would leave re-running the command as the only way to see the rest —
+        // and the command may have had side effects.
+        let mut out_sink = spill.sink("ssh-stdout", MAX_OUTPUT_BYTES);
+        let mut err_sink = spill.sink("ssh-stderr", MAX_OUTPUT_BYTES);
         let mut exit_code = 0;
-
-        // A remote command is untrusted output of unbounded length: `cat
-        // /dev/urandom` would otherwise grow these buffers until the process
-        // dies. Keep reading so the channel closes cleanly, but stop storing.
-        let append = |buffer: &mut Vec<u8>, data: &[u8], truncated: &mut bool| {
-            let room = MAX_OUTPUT_BYTES.saturating_sub(buffer.len());
-            if room == 0 {
-                *truncated = true;
-                return;
-            }
-            let take = data.len().min(room);
-            buffer.extend_from_slice(&data[..take]);
-            *truncated |= take < data.len();
-        };
 
         while let Some(msg) = channel.wait().await {
             match msg {
-                ChannelMsg::Data { data } => append(&mut stdout, &data, &mut truncated),
-                ChannelMsg::ExtendedData { data, ext: 1 } => {
-                    append(&mut stderr, &data, &mut truncated);
-                }
+                ChannelMsg::Data { data } => out_sink.push(&data),
+                ChannelMsg::ExtendedData { data, ext: 1 } => err_sink.push(&data),
                 ChannelMsg::ExitStatus { exit_status } => exit_code = exit_status,
                 ChannelMsg::Close => break,
                 _ => {}
             }
         }
 
-        let mut out = String::from_utf8_lossy(&stdout).into_owned();
-        if truncated {
-            use std::fmt::Write as _;
-            let _ = write!(out, "\n[omni-mcp: output truncated at {MAX_OUTPUT_BYTES} bytes]");
-        }
-
-        Ok((out, String::from_utf8_lossy(&stderr).into_owned(), exit_code))
+        Ok((out_sink.finish(), err_sink.finish(), exit_code))
     }
 
     pub async fn get_sftp(&mut self) -> ToolResult<&SftpSession> {
