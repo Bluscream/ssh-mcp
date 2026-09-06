@@ -1,0 +1,25 @@
+# ssh-mcp server profiles.
+#
+# Secrets are never written here. `${VAR}` is read from the environment at load
+# time, and `${VAR:-default}` supplies a fallback. A referenced variable that is
+# not set is a startup error rather than a silently empty credential.
+
+[[servers]]
+name = "nas"
+host = "192.168.1.10"
+port = 22
+user = "admin"
+
+# Prefer a key over a password.
+private_key = "/home/you/.ssh/id_ed25519"
+# passphrase = "${SSH_KEY_PASSPHRASE}"
+# password = "${NAS_PASSWORD}"
+
+# Pin the host key. Get it with:
+#   ssh-keyscan -t ed25519 192.168.1.10 | ssh-keygen -lf -
+# fingerprint = "SHA256:n0mNPJd7EjKBBAzYNzB2c9Y0RQFYuPbYmi0mYFakEEo"
+
+# Restrict what may run. An unparseable pattern is a startup error, so a typo
+# cannot silently disable the guard.
+# whitelist = ["^systemctl ", "^journalctl "]
+blacklist = ["rm\\s+-rf\\s+/", "mkfs", "dd\\s+if="]

@@ -1,0 +1,46 @@
+[package]
+name = "ssh-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "SSH command execution, SFTP transfer and host telemetry, as an MCP server"
+license = "Unlicense"
+repository = "https://github.com/Bluscream/ssh-mcp"
+readme = "README.md"
+keywords = ["mcp", "ssh", "sftp", "remote"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+async-trait = "0.1.92"
+clap = { version = "4.6.6", features = ["derive", "env"] }
+ignore = "0.4.33"
+mcp-toolkit = { git = "https://github.com/Bluscream/mcp-toolkit", branch = "main", version = "0.1.0" }
+regex = "1.13.1"
+russh = "0.63.1"
+russh-sftp = "2.4.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "fs"] }
+toml = "1.1.5"
+tracing = "0.1.44"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+too_many_lines = "deny"
+
+[dev-dependencies]
+tempfile = "3.27.0"
