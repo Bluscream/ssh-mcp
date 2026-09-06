@@ -1,19 +1,14 @@
 //! ssh-mcp — SSH command execution, SFTP transfer and host telemetry over MCP.
 
-mod args;
-mod config;
-mod policy;
-mod tools;
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
 use mcp_toolkit::ServerOptions;
 
-use config::Config;
-use policy::Policy;
-use tools::SshTools;
+use ssh_mcp::config::Config;
+use ssh_mcp::policy::Policy;
+use ssh_mcp::tools::SshTools;
 
 #[derive(Parser, Debug)]
 #[command(
