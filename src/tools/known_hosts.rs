@@ -2,7 +2,7 @@
 
 use russh::keys::PublicKey;
 use russh::keys::known_hosts;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
@@ -18,13 +18,13 @@ impl KnownHostsStore {
     }
 
     /// Resolves the standard OpenSSH `~/.ssh/known_hosts` path.
+    /// The standard OpenSSH location, resolved the same way on every platform.
+    ///
+    /// Reading only `HOME` meant Windows — where `USERPROFILE` is set instead —
+    /// fell back to a *relative* path, writing host keys into whatever
+    /// directory the server happened to start in.
     pub fn default_path() -> PathBuf {
-        if let Ok(home) = std::env::var("HOME")
-            && !home.is_empty()
-        {
-            return Path::new(&home).join(".ssh").join("known_hosts");
-        }
-        PathBuf::from(".ssh/known_hosts")
+        mcp_toolkit::paths::ssh_dir().unwrap_or_else(|| PathBuf::from(".ssh")).join("known_hosts")
     }
 
     /// Checks if a public key matches `known_hosts`.

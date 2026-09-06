@@ -2,7 +2,6 @@
 //! than run as a subprocess. The binary in `main.rs` is a thin wrapper
 //! over this.
 
-pub mod args;
 pub mod config;
 pub mod policy;
 pub mod tools;

@@ -1,24 +1,25 @@
 //! What this server is allowed to do.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 
-use mcp_toolkit::{ToolFailure, ToolResult};
+use mcp_toolkit::{Sandbox, ToolFailure, ToolResult};
 
 #[derive(Debug, Clone)]
 pub struct Policy {
     allow_transfer_write: bool,
     allow_host_key_override: bool,
     allow_host_key_learning: bool,
-    roots: Vec<PathBuf>,
+    sandbox: Sandbox,
 }
 
 impl Default for Policy {
     fn default() -> Self {
+        // Host-key learning defaults on, matching OpenSSH's accept-new.
         Self {
             allow_transfer_write: false,
             allow_host_key_override: false,
             allow_host_key_learning: true,
-            roots: Vec::new(),
+            sandbox: Sandbox::default(),
         }
     }
 }
@@ -30,8 +31,12 @@ impl Policy {
         allow_host_key_learning: bool,
         roots: &[PathBuf],
     ) -> Self {
-        let roots = roots.iter().map(|r| r.canonicalize().unwrap_or_else(|_| r.clone())).collect();
-        Self { allow_transfer_write, allow_host_key_override, allow_host_key_learning, roots }
+        Self {
+            allow_transfer_write,
+            allow_host_key_override,
+            allow_host_key_learning,
+            sandbox: Sandbox::new(roots, mcp_toolkit::sandbox::DEFAULT_MAX_FILE_BYTES),
+        }
     }
 
     pub fn allows_host_key_learning(&self) -> bool {
@@ -71,37 +76,10 @@ impl Policy {
         ))
     }
 
-    /// Resolves a local path, rejecting anything outside the configured roots.
+    /// Resolves a local path within the permitted roots.
     pub fn resolve(&self, raw: &str) -> ToolResult<PathBuf> {
-        if raw.trim().is_empty() {
-            return Err(ToolFailure::InvalidArguments("path must not be empty".into()));
-        }
-        let requested = Path::new(raw);
-        if requested.is_relative() {
-            return Err(ToolFailure::InvalidArguments(format!(
-                "local path {raw:?} must be absolute"
-            )));
-        }
-        let resolved = requested.canonicalize().unwrap_or_else(|_| normalize(requested));
-        if self.roots.is_empty() || self.roots.iter().any(|root| resolved.starts_with(root)) {
-            return Ok(resolved);
-        }
-        Err(ToolFailure::Denied(format!("local path {raw:?} is outside the configured --root set")))
+        self.sandbox.resolve(raw)
     }
-}
-
-fn normalize(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                out.pop();
-            }
-            Component::CurDir => {}
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -133,16 +111,5 @@ mod tests {
         let policy = Policy::new(true, true, true, &[]);
         assert!(policy.require_write().is_ok());
         assert!(policy.require_host_key_override().is_ok());
-    }
-
-    #[test]
-    fn local_paths_are_confined_to_the_roots() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        let policy = Policy::new(true, false, true, std::slice::from_ref(&root));
-
-        assert!(policy.resolve(root.join("f").to_str().unwrap()).is_ok());
-        assert!(matches!(policy.resolve("/etc/passwd"), Err(ToolFailure::Denied(_))));
-        assert!(policy.resolve("relative").is_err());
     }
 }
